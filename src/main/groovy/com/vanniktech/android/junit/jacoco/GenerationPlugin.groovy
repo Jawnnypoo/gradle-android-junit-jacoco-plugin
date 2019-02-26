@@ -1,4 +1,4 @@
-package com.vanniktech.android.junit.jacoco
+package com.instacart.jacoco
 
 import com.android.build.gradle.api.BaseVariant
 import org.gradle.api.Plugin
@@ -17,6 +17,12 @@ class GenerationPlugin implements Plugin<Project> {
             final def (JacocoMerge mergeTask, JacocoReport mergedReportTask) = addJacocoMergeToRootProject(rootProject, rootProject.junitJacoco)
 
             rootProject.subprojects { subProject ->
+                subProject.tasks.whenTaskAdded {
+                    if (it instanceof JacocoReport) {
+                        mergeTask.dependsOn it
+                    }
+                }
+
                 afterEvaluate {
                     final def extension = rootProject.junitJacoco
                     addJacoco(subProject, extension, mergeTask, mergedReportTask)
@@ -73,11 +79,11 @@ class GenerationPlugin implements Plugin<Project> {
             )
 
             final def coverageSourceDirs = [
-                'src/main/clojure',
-                'src/main/groovy',
-                'src/main/java',
-                'src/main/kotlin',
-                'src/main/scala'
+                    'src/main/clojure',
+                    'src/main/groovy',
+                    'src/main/java',
+                    'src/main/kotlin',
+                    'src/main/scala'
             ]
 
             additionalSourceDirs = subProject.files(coverageSourceDirs)
@@ -88,9 +94,9 @@ class GenerationPlugin implements Plugin<Project> {
                 mergeTask.executionData += executionData
             }
             if (mergedReportTask != null) {
-                mergedReportTask.classDirectories += classDirectories
-                mergedReportTask.additionalSourceDirs += additionalSourceDirs
-                mergedReportTask.sourceDirectories += sourceDirectories
+                mergedReportTask.classDirectories.setFrom(classDirectories.files + mergedReportTask.classDirectories.files)
+                mergedReportTask.additionalSourceDirs.setFrom(additionalSourceDirs.files + mergedReportTask.additionalSourceDirs.files)
+                mergedReportTask.sourceDirectories.setFrom(sourceDirectories.files + mergedReportTask.sourceDirectories.files)
             }
         }
 
@@ -143,11 +149,11 @@ class GenerationPlugin implements Plugin<Project> {
             final def instrumentationTestTaskName = "create${sourceName.capitalize()}CoverageReport"
 
             addJacocoTask(false, subProject, extension, mergeTask, mergedReportTask, jvmTaskName,
-                jvmTestTaskName, instrumentationTestTaskName, sourceName, sourcePath, productFlavorName, buildTypeName)
+                    jvmTestTaskName, instrumentationTestTaskName, sourceName, sourcePath, productFlavorName, buildTypeName)
 
             if (buildType.testCoverageEnabled) {
                 addJacocoTask(true, subProject, extension, mergeTask, mergedReportTask, combinedTaskName,
-                    jvmTestTaskName, instrumentationTestTaskName, sourceName, sourcePath, productFlavorName, buildTypeName)
+                        jvmTestTaskName, instrumentationTestTaskName, sourceName, sourcePath, productFlavorName, buildTypeName)
             }
         }
 
@@ -158,7 +164,7 @@ class GenerationPlugin implements Plugin<Project> {
                                       JacocoMerge mergeTask, JacocoReport mergedReportTask, final String taskName,
                                       final String jvmTestTaskName, final String instrumentationTestTaskName, final String sourceName,
                                       final String sourcePath, final String productFlavorName, final String buildTypeName) {
-        final def destinationDir
+        def destinationDir
         if (combined) {
             destinationDir = "${subProject.buildDir}/reports/jacocoCombined"
         } else {
@@ -191,11 +197,11 @@ class GenerationPlugin implements Plugin<Project> {
             }
 
             def classPaths = [
-                "**/intermediates/classes/${sourcePath}/**",
-                "**/intermediates/javac/${sourceName}/*/classes/**" // Android Gradle Plugin 3.2.x support.
+                    "**/intermediates/classes/${sourcePath}/**",
+                    "**/intermediates/javac/${sourceName}/*/classes/**" // Android Gradle Plugin 3.2.x support.
             ]
 
-            if (isKotlinAndroid(subProject) || isKotlinMultiplatform(subProject)) {
+            if (isKotlinAndroid(subProject)) {
                 classPaths << "**/tmp/kotlin-classes/${sourcePath}/**"
                 if (productFlavorName) {
                     classPaths << "**/tmp/kotlin-classes/${productFlavorName}${buildTypeName.capitalize()}/**"
@@ -203,22 +209,22 @@ class GenerationPlugin implements Plugin<Project> {
             }
 
             classDirectories = subProject.fileTree(
-                dir: subProject.buildDir,
-                includes: classPaths,
-                excludes: getExcludes(extension)
+                    dir: subProject.buildDir,
+                    includes: classPaths,
+                    excludes: getExcludes(extension)
             )
 
             final def coverageSourceDirs = [
-                "src/main/clojure",
-                "src/main/groovy",
-                "src/main/java",
-                "src/main/kotlin",
-                "src/main/scala",
-                "src/$buildTypeName/clojure",
-                "src/$buildTypeName/groovy",
-                "src/$buildTypeName/java",
-                "src/$buildTypeName/kotlin",
-                "src/$buildTypeName/scala"
+                    "src/main/clojure",
+                    "src/main/groovy",
+                    "src/main/java",
+                    "src/main/kotlin",
+                    "src/main/scala",
+                    "src/$buildTypeName/clojure",
+                    "src/$buildTypeName/groovy",
+                    "src/$buildTypeName/java",
+                    "src/$buildTypeName/kotlin",
+                    "src/$buildTypeName/scala"
             ]
 
             if (productFlavorName) {
@@ -231,14 +237,10 @@ class GenerationPlugin implements Plugin<Project> {
 
             additionalSourceDirs = subProject.files(coverageSourceDirs)
             sourceDirectories = subProject.files(coverageSourceDirs)
-            executionData = subProject.files("${subProject.buildDir}/jacoco/${jvmTestTaskName}.exec")
-
-            if (combined) {
-                // add instrumentation coverage execution data
-                executionData += subProject.fileTree("${subProject.buildDir}/outputs/code_coverage").matching {
-                    include "**/*.ec"
-                }
-            }
+            executionData = subProject.fileTree(
+                    dir: subProject.buildDir,
+                    include: ["**/*.ec", "**/*.exec"]
+            )
 
             // add if true in extension or for the unit test Jacoco task
             def addToMergeTask = !combined || extension.includeInstrumentationCoverageInMergedReport
@@ -247,16 +249,16 @@ class GenerationPlugin implements Plugin<Project> {
                 mergeTask.executionData += executionData
             }
             if (mergedReportTask != null && addToMergeTask) {
-                mergedReportTask.classDirectories += classDirectories
-                mergedReportTask.additionalSourceDirs += additionalSourceDirs
-                mergedReportTask.sourceDirectories += sourceDirectories
+                mergedReportTask.classDirectories.setFrom(classDirectories.files + mergedReportTask.classDirectories.files)
+                mergedReportTask.additionalSourceDirs.setFrom(additionalSourceDirs.files + mergedReportTask.additionalSourceDirs.files)
+                mergedReportTask.sourceDirectories.setFrom(sourceDirectories.files + mergedReportTask.sourceDirectories.files)
             }
         }
 
         subProject.check.dependsOn "${taskName}"
     }
 
-    protected static addJacocoMergeToRootProject(final Project project, final JunitJacocoExtension extension) {
+    private static addJacocoMergeToRootProject(final Project project, final JunitJacocoExtension extension) {
         project.plugins.apply('jacoco')
 
         project.afterEvaluate {
@@ -313,26 +315,26 @@ class GenerationPlugin implements Plugin<Project> {
 
     static List<String> getExcludes(final JunitJacocoExtension extension) {
         extension.excludes == null ? [
-         '**/R.class',
-         '**/R2.class', // ButterKnife Gradle Plugin.
-         '**/R$*.class',
-         '**/R2$*.class', // ButterKnife Gradle Plugin.
-         '**/*$$*',
-         '**/*$ViewInjector*.*', // Older ButterKnife Versions.
-         '**/*$ViewBinder*.*', // Older ButterKnife Versions.
-         '**/*_ViewBinding*.*', // Newer ButterKnife Versions.
-         '**/BuildConfig.*',
-         '**/Manifest*.*',
-         '**/*$Lambda$*.*', // Jacoco can not handle several "$" in class name.
-         '**/*Dagger*.*', // Dagger auto-generated code.
-         '**/*MembersInjector*.*', // Dagger auto-generated code.
-         '**/*_Provide*Factory*.*', // Dagger auto-generated code.
-         '**/*_Factory*.*', // Dagger auto-generated code.
-         '**/*$JsonObjectMapper.*', // LoganSquare auto-generated code.
-         '**/*$inlined$*.*', // Kotlin specific, Jacoco can not handle several "$" in class name.
-         '**/*$Icepick.*', // Icepick auto-generated code.
-         '**/*$StateSaver.*', // android-state auto-generated code.
-         '**/*AutoValue_*.*' // AutoValue auto-generated code.
+                '**/R.class',
+                '**/R2.class', // ButterKnife Gradle Plugin.
+                '**/R$*.class',
+                '**/R2$*.class', // ButterKnife Gradle Plugin.
+                '**/*$$*',
+                '**/*$ViewInjector*.*', // Older ButterKnife Versions.
+                '**/*$ViewBinder*.*', // Older ButterKnife Versions.
+                '**/*_ViewBinding*.*', // Newer ButterKnife Versions.
+                '**/BuildConfig.*',
+                '**/Manifest*.*',
+                '**/*$Lambda$*.*', // Jacoco can not handle several "$" in class name.
+                '**/*Dagger*.*', // Dagger auto-generated code.
+                '**/*MembersInjector*.*', // Dagger auto-generated code.
+                '**/*_Provide*Factory*.*', // Dagger auto-generated code.
+                '**/*_Factory*.*', // Dagger auto-generated code.
+                '**/*$JsonObjectMapper.*', // LoganSquare auto-generated code.
+                '**/*$inlined$*.*', // Kotlin specific, Jacoco can not handle several "$" in class name.
+                '**/*$Icepick.*', // Icepick auto-generated code.
+                '**/*$StateSaver.*', // android-state auto-generated code.
+                '**/*AutoValue_*.*' // AutoValue auto-generated code.
         ] : extension.excludes
     }
 
@@ -354,10 +356,6 @@ class GenerationPlugin implements Plugin<Project> {
 
     protected static boolean isKotlinAndroid(final Project project) {
         return project.plugins.hasPlugin('org.jetbrains.kotlin.android')
-    }
-
-    protected static boolean isKotlinMultiplatform(final Project project) {
-        return project.plugins.hasPlugin('org.jetbrains.kotlin.multiplatform')
     }
 
     protected static boolean isAndroidApplication(final Project project) {
